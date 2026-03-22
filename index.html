@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>染色体结构变异模拟</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Roboto, system-ui, sans-serif;
+        }
+        body {
+            background: #ecf2fa;
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .card {
+            max-width: 1200px;
+            width: 100%;
+            background: white;
+            border-radius: 48px;
+            padding: 30px 28px;
+            box-shadow: 0 30px 50px rgba(0,15,40,0.25);
+            border: 1px solid rgba(255,255,255,0.7);
+        }
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 650;
+            margin: 0 0 10px 0;
+            color: #0a1c33;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .sub {
+            color: #2b405e;
+            margin-bottom: 28px;
+            font-size: 1.05rem;
+            border-left: 6px solid #7999cf;
+            padding-left: 20px;
+            background: #f0f6ff;
+            border-radius: 0 20px 20px 0;
+            line-height: 1.5;
+        }
+        .canvas-container {
+            background: #ffffff;
+            border-radius: 36px;
+            padding: 22px 10px 15px 10px;
+            box-shadow: inset 0 3px 8px rgba(0,0,0,0.02), 0 15px 30px rgba(0,25,60,0.15);
+            border: 1px solid #d0dae8;
+            margin: 18px 0 24px 0;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: #ffffff;
+            border-radius: 28px;
+            cursor: pointer;
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        .variant-btn {
+            background: white;
+            border: 1px solid #b3c4db;
+            padding: 12px 22px;
+            border-radius: 60px;
+            font-size: 1.15rem;
+            font-weight: 550;
+            color: #1a304c;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
+            transition: 0.15s;
+            flex: 0 1 auto;
+            min-width: 110px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+            background: linear-gradient(0deg, #f5faff, white);
+        }
+        .variant-btn:hover {
+            background: #e0ebfc;
+            border-color: #6282b5;
+            box-shadow: 0 12px 20px -12px #143259;
+            transform: scale(1.02);
+        }
+        .variant-btn:active {
+            background: #c8d6f0;
+            transform: scale(0.98);
+        }
+        .reset {
+            background: #eef2f7;
+            color: #283b54;
+            border-color: #a7bad2;
+        }
+        .status-row {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0 10px 0;
+        }
+        .status-badge {
+            background: #b9cbe8;
+            color: #0b1e36;
+            border-radius: 32px;
+            padding: 8px 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            font-family: monospace;
+            letter-spacing: 1px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+        }
+        footer {
+            text-align: center;
+            margin-top: 24px;
+            color: #4e6a91;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>🧬 染色体结构变异模拟</h1>
+    <div class="sub">点击按钮探索易位、倒位、重复、缺失</div>
+
+    <div class="canvas-container">
+        <canvas id="chromCanvas" width="1100" height="460" style="width:100%; height:auto; aspect-ratio:1100/460"></canvas>
+    </div>
+
+    <div class="toolbar">
+        <button class="variant-btn" id="btnTranslocation">🔁 易位</button>
+        <button class="variant-btn" id="btnParaInversion">🔂 臂内倒位</button>
+        <button class="variant-btn" id="btnPeriInversion">🔄 臂间倒位</button>
+        <button class="variant-btn" id="btnDuplication">📋 重复</button>
+        <button class="variant-btn" id="btnDeletion">✂️ 缺失</button>
+        <button class="variant-btn reset" id="btnReset">⟲ 重置</button>
+    </div>
+
+    <div class="status-row">
+        <div class="status-badge" id="bandCountDisplay">1A:11 1B:11 2A:8 2B:8</div>
+    </div>
+    <footer></footer>
+</div>
+
+<script>
+    (function() {
+        // ----- 固定参数：紧凑布局 -----
+        const BAND_WIDTH = 48;
+        const GAP = 2;
+        const BAND_HEIGHT = 48;
+        const START_X = 90;
+
+        // 紧凑Y坐标（上下留白少）
+        const TOP_MARGIN = 20;
+        const CHR_GAP = 70;
+        const Y1A = TOP_MARGIN;
+        const Y1B = Y1A + BAND_HEIGHT + CHR_GAP;
+        const Y2A = Y1B + BAND_HEIGHT + CHR_GAP;
+        const Y2B = Y2A + BAND_HEIGHT + CHR_GAP;
+
+        // ----- 颜色池 -----
+        const colorPalette = [
+            '#E57373', '#64B5F6', '#81C784', '#FFB74D', '#BA68C8', '#FFD54F',
+            '#4FC3F7', '#A1887F', '#F06292', '#7986CB', '#4DB6AC', '#FFF176',
+            '#E57373', '#64B5F6', '#81C784', '#FFB74D'
+        ];
+
+        // ----- 生成第一对染色体片段 (左4右7，共11个) 标签 A ~ K -----
+        function createLongBands() {
+            const bands = [];
+            const letters = 'ABCDEFGHIJK'.split(''); // A到K共11个
+            for (let i = 0; i < 11; i++) {
+                bands.push({
+                    color: colorPalette[i % colorPalette.length],
+                    label: letters[i]
+                });
+            }
+            return bands;
+        }
+
+        // ----- 生成第二对染色体片段 (左4右4，共8个) 标签 L ~ S -----
+        function createShortBands() {
+            const bands = [];
+            const letters = 'LMNOPQRS'.split(''); // L到S共8个
+            for (let i = 0; i < 8; i++) {
+                bands.push({
+                    color: colorPalette[(i+5) % colorPalette.length],
+                    label: letters[i]
+                });
+            }
+            return bands;
+        }
+
+        // 定义四个染色体对象
+        let chrom1A = { bands: createLongBands(), cenIndex: 4 };  // 左臂4个 (索引0-3)
+        let chrom1B = { bands: createLongBands(), cenIndex: 4 };  // 同源，仅用于显示，不被操作
+        let chrom2A = { bands: createShortBands(), cenIndex: 4 };
+        let chrom2B = { bands: createShortBands(), cenIndex: 4 };
+
+        const canvas = document.getElementById('chromCanvas');
+        const ctx = canvas.getContext('2d');
+        const bandCountSpan = document.getElementById('bandCountDisplay');
+
+        // 工具：roundRect
+        if (!CanvasRenderingContext2D.prototype.roundRect) {
+            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+                if (w < 2 * r) r = w / 2;
+                if (h < 2 * r) r = h / 2;
+                this.moveTo(x + r, y);
+                this.lineTo(x + w - r, y);
+                this.quadraticCurveTo(x + w, y, x + w, y + r);
+                this.lineTo(x + w, y + h - r);
+                this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                this.lineTo(x + r, y + h);
+                this.quadraticCurveTo(x, y + h, x, y + h - r);
+                this.lineTo(x, y + r);
+                this.quadraticCurveTo(x, y, x + r, y);
+                return this;
+            };
+        }
+
+        // 绘制一条染色体 (带型 + 着丝粒)
+        function drawChromosome(chrom, y, chrName) {
+            const bands = chrom.bands;
+            const cen = chrom.cenIndex;
+
+            ctx.font = '800 24px "Segoe UI", "Arial", sans-serif';
+            ctx.fillStyle = '#1e293b';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(chrName, 10, y + BAND_HEIGHT/2);
+
+            for (let i = 0; i < bands.length; i++) {
+                const band = bands[i];
+                const x = START_X + i * (BAND_WIDTH + GAP);
+                ctx.beginPath();
+                ctx.roundRect(x, y, BAND_WIDTH, BAND_HEIGHT, 8);
+                ctx.fillStyle = band.color;
+                ctx.fill();
+                ctx.strokeStyle = '#ffffffcc';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+
+                ctx.font = '800 28px "Courier New", monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = '#00000060';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                ctx.fillStyle = 'white';
+                ctx.fillText(band.label, x + BAND_WIDTH/2, y + BAND_HEIGHT/2);
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = '#0a0a0a';
+                ctx.lineWidth = 2.5;
+                ctx.strokeText(band.label, x + BAND_WIDTH/2, y + BAND_HEIGHT/2);
+            }
+
+            // 绘制着丝粒 (醒目红色)
+            if (cen > 0 && cen < bands.length) {
+                const xLeft = START_X + (cen - 1) * (BAND_WIDTH + GAP) + BAND_WIDTH;
+                const xRight = START_X + cen * (BAND_WIDTH + GAP);
+                const cenX = (xLeft + xRight) / 2;
+                const cenY = y + BAND_HEIGHT/2;
+
+                ctx.beginPath();
+                ctx.arc(cenX, cenY, 16, 0, 2 * Math.PI);
+                ctx.fillStyle = '#FF4444';
+                ctx.shadowColor = '#AA0000AA';
+                ctx.shadowBlur = 14;
+                ctx.fill();
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = '#FFFFFF';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(cenX-4, cenY-4, 6, 0, 2*Math.PI);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.shadowBlur = 0;
+                ctx.fill();
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawChromosome(chrom1A, Y1A, '1A');
+            drawChromosome(chrom1B, Y1B, '1B');
+            drawChromosome(chrom2A, Y2A, '2A');
+            drawChromosome(chrom2B, Y2B, '2B');
+
+            bandCountSpan.innerText = `1A:${chrom1A.bands.length} 1B:${chrom1B.bands.length} 2A:${chrom2A.bands.length} 2B:${chrom2B.bands.length}`;
+        }
+
+        // ----- 易位：1A左臂最后3个片段 ↔ 2A右臂最后1个片段 -----
+        function applyTranslocation() {
+            const bands1A = chrom1A.bands;
+            const bands2A = chrom2A.bands;
+            const cen1A = chrom1A.cenIndex; // 4
+
+            // 需要1A左臂至少3个，2A至少1个
+            if (cen1A < 3 || bands2A.length < 1) {
+                alert('片段不足，无法进行易位（需要1A左臂≥3，2A≥1）');
+                return;
+            }
+
+            // 1A左臂最后3个片段索引：cen1A-3, cen1A-2, cen1A-1
+            const leftStart = cen1A - 3;
+            const leftEnd = cen1A - 1;
+            const leftThree = bands1A.splice(leftStart, 3);
+
+            // 2A右臂最后1个片段索引：bands2A.length - 1
+            const shortLastOne = bands2A.splice(bands2A.length - 1, 1);
+
+            // 将2A的1个片段插入到1A原左臂最后3个的位置（替换）
+            bands1A.splice(leftStart, 0, ...shortLastOne);
+
+            // 将1A的3个片段追加到2A末尾
+            bands2A.push(...leftThree);
+
+            // 更新着丝粒索引：
+            // 1A左臂长度变为：原左臂长度 - 3 + 1 = 4 - 3 + 1 = 2
+            chrom1A.cenIndex = 2;
+            // 2A左臂长度不变（仍是4），但右臂长度增加，着丝粒索引仍为4
+            chrom2A.cenIndex = 4;
+
+            draw();
+        }
+
+        // ----- 臂内倒位：1A左臂最后3个片段反转 (左臂共4个，最后3个为索引1,2,3) -----
+        function applyParacentric() {
+            const bands = chrom1A.bands;
+            const cen = chrom1A.cenIndex;  // 4
+            if (cen < 3) {
+                alert('左臂不足3个片段，无法进行臂内倒位');
+                return;
+            }
+            const i = cen - 3;  // 索引1
+            const j = cen - 1;  // 索引3
+            let left = i, right = j;
+            while (left < right) {
+                [bands[left], bands[right]] = [bands[right], bands[left]];
+                left++;
+                right--;
+            }
+            draw();
+        }
+
+        // ----- 臂间倒位：1A左臂最后3个 + 右臂第1个 (共4个片段) 反转，并更新着丝粒位置 -----
+        function applyPericentric() {
+            const bands = chrom1A.bands;
+            const cen = chrom1A.cenIndex;  // 4
+            // 左臂至少3个，右臂至少1个
+            if (cen < 3 || bands.length - cen < 1) {
+                alert('左臂不足3或右臂不足1，无法进行臂间倒位');
+                return;
+            }
+            const leftStart = cen - 3;   // 左臂最后3个起始索引 (1)
+            const rightEnd = cen;        // 右臂第一个索引 (4)
+            if (leftStart < 0 || rightEnd >= bands.length) return;
+
+            let i = leftStart, j = rightEnd;
+            while (i < j) {
+                [bands[i], bands[j]] = [bands[j], bands[i]];
+                i++;
+                j--;
+            }
+            // 新左臂长度 = leftStart + 1 (区间左侧片段数 + 1个右臂片段)
+            chrom1A.cenIndex = leftStart + 1;
+            draw();
+        }
+
+        // ----- 重复：1A复制最后4个片段并追加 -----
+        function applyDuplication() {
+            const bands = chrom1A.bands;
+            if (bands.length < 4) {
+                alert('片段不足4，无法重复最后4个片段');
+                return;
+            }
+            const lastFour = bands.slice(-4);
+            const duplicates = lastFour.map(b => ({ color: b.color, label: b.label }));
+            bands.push(...duplicates);
+            draw();
+        }
+
+        // ----- 缺失：1A左臂缺失2个片段（删除左臂最后2个）-----
+        function applyDeletion() {
+            const bands = chrom1A.bands;
+            const cen = chrom1A.cenIndex; // 4
+            if (cen < 2) {
+                alert('左臂不足2个片段，无法删除2个片段');
+                return;
+            }
+            // 删除左臂最后2个片段（索引 cen-2 和 cen-1）
+            const deleteStart = cen - 2;
+            bands.splice(deleteStart, 2);
+            // 更新着丝粒索引：左臂长度减少2
+            chrom1A.cenIndex = cen - 2;
+            draw();
+        }
+
+        // ----- 重置所有染色体 -----
+        function applyReset() {
+            chrom1A = { bands: createLongBands(), cenIndex: 4 };
+            chrom1B = { bands: createLongBands(), cenIndex: 4 };
+            chrom2A = { bands: createShortBands(), cenIndex: 4 };
+            chrom2B = { bands: createShortBands(), cenIndex: 4 };
+            draw();
+        }
+
+        // 绑定按钮
+        document.getElementById('btnTranslocation').addEventListener('click', applyTranslocation);
+        document.getElementById('btnParaInversion').addEventListener('click', applyParacentric);
+        document.getElementById('btnPeriInversion').addEventListener('click', applyPericentric);
+        document.getElementById('btnDuplication').addEventListener('click', applyDuplication);
+        document.getElementById('btnDeletion').addEventListener('click', applyDeletion);
+        document.getElementById('btnReset').addEventListener('click', applyReset);
+        canvas.addEventListener('dblclick', applyReset);
+
+        draw();
+    })();
+</script>
+</body>
+</html>
